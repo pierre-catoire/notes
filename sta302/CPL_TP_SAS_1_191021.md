@@ -8,7 +8,7 @@ knitr::opts_chunk$set(echo = TRUE)
 df = read.delim("pbc_noExtreme.txt")
 ```
 
-# STA302 : TP SAS Modèles linéaires mixtes
+# STA302 : TP SAS Modèles linéaires mixtes (19.10.21)
 
 ## Notation
 
