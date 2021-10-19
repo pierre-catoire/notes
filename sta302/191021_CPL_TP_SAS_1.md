@@ -1,3 +1,4 @@
+
 ---
 title: "main"
 output: html_document
@@ -76,25 +77,53 @@ $$ = (\begin{array}{c} 1 & t_{ij} \end{array}) \times \left(\begin{array}{cc}
 
 $$cov(Y_{ij},Y_{ij'}) = \sigma_{0}^{2} + \sigma_{1}^{2}t_{ij}t_{ij'} + \sigma_{01}(t_{ij}+t_{ij'})$$
 
+
+
 ## Code SAS
 
-Pour un modèle à intercept aléatoire :
 
-```{r sas}
+### Pour un modèle à intercept aléatoire :
 
-#proc mixed data = tp.df method = ML plots = all;
-#class id;
-#model albumin = year;/*au niveau de la population*/
-#random intercept / subject = id type = UN; /*au niveau de l'individu*/
-#run;
+$$ Y_{ij} = (\beta_{0} + u_{0i}) + \beta_{1}t_{ij} + \epsilon_{ij}$$
+
+```
+proc mixed data = tp.df method = ML plots = all;
+class id;
+model albumin = year;/*au niveau de la population*/
+random intercept / subject = id type = UN; /*au niveau de l'individu*/
+run;
 ```
 
-Pour un modèle à intercept et pente aléatoires :
-```{r sas2}
+### Pour un modèle à intercept et pente aléatoires :
 
-#proc mixed data = tp.df method = ML plots = all;
-#class id;
-#model albumin = year;/*au niveau de la population*/
-#random intercept year / subject = id type = UN; /*au niveau de l'individu*/
-#run;
+$$ Y_{ij} = (\beta_{0} + u_{0i}) + (\beta_{1} + u_{1i})t_{ij} + \epsilon_{ij}$$
+
 ```
+proc mixed data = tp.df method = ML plots = all;
+class id;
+model albumin = year;/*au niveau de la population*/
+random intercept year / subject = id type = UN; /*au niveau de l'individu*/
+run;
+```
+
+### Recherche de l'efficacité du traitement
+
+
+$$ Y_{ij} = (\beta_{0} + \beta_{drug}X_{drug}+ u_{0i}) + (\beta_{1} + \beta_{drug*t}X_{drug} + u_{1i})t_{ij} + \epsilon_{ij}$$
+
+Avec :
+
+- $X_{drug} = 0$ si placebo
+-  $X_{drug} = 1$ si D-pénicillamine
+
+On veut tester $H_{0} : \beta_{drug*t} = 0$ car il représente la variation de la pente expliquée par le traitement.
+
+```
+proc mixed data = tp.df method = ML covtest;
+class id drug;
+model albumin = year drug year*drug/ s;/*au niveau de la population*/
+random intercept year / subject = id type = UN; /*au niveau de l'individu, type = UN signifie structure de covariance non déterminée, soit on ne fait pas l'hypothèse d'indépendance des effets aléatoires*/
+run;
+```
+
+
