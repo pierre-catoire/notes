@@ -1,0 +1,124 @@
+---
+title: "pierre_catoire_cc_sta104"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=T, echo=T}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+```
+
+## Exercice 1
+
+### a.
+
+```{r ex1}
+df = read.csv2("hta.csv")
+names(df) = toupper(names(df))
+sapply(df, class)
+
+```
+### b.
+```{r ex1b}
+df$DATENAIS = as.Date(df$DATENAIS, format = "%d/%m/%Y")
+df$DATEM = as.Date(df$DATEM, format = "%d/%m/%Y")
+df$SEXE = as.factor(df$SEXE)
+df$HTA = as.factor(df$HTA)
+df$DIABBIS = as.factor(df$DIABBIS)
+df$DIPNIV = as.factor(df$DIPNIV)
+
+#On vérifie les formats
+sapply(df, class)
+```
+
+
+### c.
+```{r ex1c}
+#On recode les femmes (anciennement en 2) en 1, et les hommes (anciennement en 1) en 0
+df$SEXE = ifelse(df$SEXE == 2,1,0)
+```
+
+### d.
+```{r ex1d}
+table(df$SEXE) #Effectifs par classe de sexe
+prop.table(table(df$SEXE)) #Pourcentages par classe de sexe
+
+table(df$HTA) #Effectifs des patients hypertendus (1) et non hypertendus (0)
+prop.table(table(df$HTA)) #Pourcentages de patients hypertendus (1) et non hypertendus (0)
+
+hist(df$TOTMED,
+     main = "Répartition du nombre de médicaments déclarés être pris de manière régulière au cours du mois précédant l'entretien")
+```
+
+### e.
+
+```{r ex1e}
+df$AGE = as.numeric(difftime(df$DATEM,df$DATENAIS, units = "weeks")/52.25)
+plot(density(df$AGE))
+summary(df$AGE)
+```
+
+Le plus jeune sujet de l'étude a `r summary(df$AGE)[1]` ans et le plus âgé a `r summary(df$AGE)[6]` ans.
+
+### f.
+
+```{r ex1f}
+df$NIVAGE = ifelse(df$AGE < 75,1,
+                   ifelse(df$AGE < 84,2,3))
+df$NIVAGE = as.factor(df$NIVAGE)
+plot(df$NIVAGE, main = "Répartition des sujets par classe d'âge : moins de 75 ans (1), 75 à 83 ans (2), plus de 83 ans (3)")
+```
+
+La classe 1 (moins de 74 ans) est la plus représentée.
+### g.
+
+```{r ex1g}
+boxplot (df$TOTMED~df$NIVAGE, main = "Nombre de médicaments déclarés pris en fonction des niveaux d'âge")
+ 
+table_age_hta = table(df$NIVAGE,df$HTA)
+barplot(table_age_hta, beside = T, main = "Répartition des niveaux d'âge en fonction de la présence d'hypertension",
+xlab = "Statut tensionnel", ylab = "Effectifs",
+col = c("red","green","blue")
+)
+```
+
+## Exercice 2
+
+### a.
+
+```{r ex2a}
+extract_sex = function(sexe){
+  answer = df[df$SEXE == sexe,]
+  return(answer)
+}
+
+hta_femme = extract_sex(1)
+
+#Nombre de femmes :
+nrow(hta_femme)
+
+#âge moyen des femmes :
+mean(hta_femme$AGE)
+```
+
+### b.
+
+```{r ex2b}
+df$HTAINT = as.numeric(df$HTA)-1
+info_hta_couple = function(id_couple){
+  if(sum(df[df$COUPLE == id_couple,]$HTAINT) == 0){
+    print("Pas d'hypertension dans le couple")
+  } else if(sum(df[df$COUPLE == id_couple,]$HTAINT) == 1){
+    print("Hypertension chez un conjoint")
+  } else {
+    print("Hypertension chez les deux conjoints")
+  }
+}
+
+info_hta_couple(7)
+info_hta_couple(8)
+info_hta_couple(9)
+```
