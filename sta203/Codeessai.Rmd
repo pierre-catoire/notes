@@ -1,0 +1,276 @@
+---
+title: "main"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("dplyr")
+library("ggplot2")
+library("kableExtra")
+library("survival")
+library("mice")
+library("epiR")
+library("epiDisplay")
+library(VIM)
+library(visdat)
+library(corrplot)
+
+cap = function(df){
+  df$sexe = as.factor(df$sexe)
+  df$tbc = as.factor(df$tbc)
+  names(df) = toupper(names(df))
+  return(df)
+}
+```
+
+## TP MULTIPLE IMPUTATION
+
+### Exercice 1
+
+#### Partie 1. Chargements
+
+Cohorte prospective multicentrique ANRS CO13 HEPAVIH, incluant les participants co-infectés par le VIH et le VHC.
+
+```{r df}
+df_mcar = cap(read.delim("HEPAVIH_MCAR.txt"))
+df_mnar = cap(read.delim("HEPAVIH_MNAR.txt"))
+df_mar = cap(read.delim("HEPAVIH_MAR.txt"))
+```
+
+## Partie 2. Données manquantes complètement au hasard
+
+```{r 21, echo=FALSE}
+df_mcar$R = ifelse(rowSums(is.na(df_mcar))==0,1,0)
+```
+
+```{r 22, echo=FALSE}
+df22 = summary(aggr(df_mcar))[[1]]
+df22 = data.frame(unname(df22$Variable),df22$Count)
+kable_classic(kable(df22,align = "cc",col.names = c("Variables","Effectif")),full_width = T)
+aggr(df_mcar)
+vis_dat(df_mcar[is.na(df_mcar),])
+```
+
+
+```{r}
+summar=function(df){
+  v_sexe = c(
+    
+      nrow(df[df$SEXE == 1 & df$R == 1,]),
+      paste(round(100*nrow(df[df$SEXE == 0 & df$R == 1,])/nrow(df[df$R == 1,]),1),"%",sep=""),
+      nrow(df[df$SEXE == 1 & df$R == 0,]),
+      paste(round(100*nrow(df[df$SEXE == 0 & df$R == 0,])/nrow(df[df$R == 0,]),1),"%",sep="")
+  )
+  
+  v_tbc = c(
+      nrow(df[df$TABAC == 1 & df$R == 1,]),
+      paste(round(100*nrow(df[df$TABAC == 0 & df$R == 1,])/nrow(df[df$R == 1,]),1),"%",sep=""),
+      nrow(df[df$TABAC == 1 & df$R == 0,]),
+      paste(round(100*nrow(df[df$TABAC == 0 & df$R == 0,])/nrow(df[df$R == 0,]),1),"%",sep="")
+  )
+  
+  v_cd4 = c(
+    round(mean(df[df$R == 1,]$CD4_VAL, na.rm = T),1),
+    round(sd(df[df$R == 1,]$CD4_VAL, na.rm = T),1),
+    round(mean(df[df$R == 0,]$CD4_VAL, na.rm = T),1),
+    round(sd(df[df$R == 0,]$CD4_VAL, na.rm = T),1)
+  )
+  
+  v_suivi = c(
+    round(mean(df[df$R == 1,]$SUIVI, na.rm = T),1),
+    round(sd(df[df$R == 1,]$SUIVI, na.rm = T),1),
+    round(mean(df[df$R == 0,]$SUIVI, na.rm = T),1),
+    round(sd(df[df$R == 0,]$SUIVI, na.rm = T),1)
+  )
+  
+  v_dcd = c(
+      nrow(df[df$DCD == 1 & df$R == 1,]),
+      paste(round(100*nrow(df[df$DCD == 0 & df$R == 1,])/nrow(df[df$R == 1,]),1),"%",sep=""),
+      nrow(df[df$DCD == 1 & df$R == 0,]),
+      paste(round(100*nrow(df[df$DCD == 0 & df$R == 0,])/nrow(df[df$R == 0,]),1),"%",sep="")
+  )
+  
+  v_fib4 = c(
+    round(mean(df[df$R == 1,]$FIB4, na.rm = T),1),
+    round(sd(df[df$R == 1,]$FIB4, na.rm = T),1),
+    round(mean(df[df$R == 0,]$FIB4, na.rm = T),1),
+    round(sd(df[df$R == 0,]$FIB4, na.rm = T),1)
+  )
+  
+  v_age = c(
+    round(mean(df[df$R == 1,]$AGE, na.rm = T),1),
+    round(sd(df[df$R == 1,]$AGE, na.rm = T),1),
+    round(mean(df[df$R == 0,]$AGE, na.rm = T),1),
+    round(sd(df[df$R == 0,]$AGE, na.rm = T),1)
+  )
+  
+  v_vhcdur = c(
+    round(mean(df[df$R == 1,]$VHC_DUR, na.rm = T),1),
+    round(sd(df[df$R == 1,]$VHC_DUR, na.rm = T),1),
+    round(mean(df[df$R == 0,]$VHC_DUR, na.rm = T),1),
+    round(sd(df[df$R == 0,]$VHC_DUR, na.rm = T),1)
+  )
+  
+col1 = c("Sexe","Tabac","CD4","SUIVI","DCD","FIB4","AGE","VHCDUR")
+col2 = c(v_sexe[1],v_tbc[1],v_cd4[1],v_suivi[1],v_dcd[1],v_fib4[1],v_age[1],v_vhcdur[1])
+col3 = c(v_sexe[2],
+        v_tbc[2],
+        v_cd4[2],
+        v_suivi[2],
+        v_dcd[2],
+        v_fib4[2],
+        v_age[2],
+        v_vhcdur[2])
+col4 = c(v_sexe[3],
+        v_tbc[3],
+        v_cd4[3],
+        v_suivi[3],
+        v_dcd[3],
+        v_fib4[3],
+        v_age[3],
+        v_vhcdur[3])
+col5 = c(v_sexe[4],
+        v_tbc[4],
+        v_cd4[4],
+        v_suivi[4],
+        v_dcd[4],
+        v_fib4[4],
+        v_age[4],
+        v_vhcdur[4])
+
+d = data.frame(col1,col2,col3,col4,col5)
+return(d)
+}
+
+kable_classic(kable(summar(df_mcar),
+                    align = "ccccc",
+                    col.names= c("Variable",
+                                "N / moyenne non-NA",
+                                "pct / SD non-NA",
+                                "N / moyenne NA",
+                                "pct / SD NA")
+                    ),
+              full_width = T)
+
+length(df_mcar[df_mcar$R == 1,]$SEXE)
+length(df_mcar[df_mcar$R == 1,]$SEXE)
+```
+
+```{r}
+#signif
+
+star = function(c){
+  answer = c()
+  for(value in c){
+    if(value < 0.05){
+      answer = append(answer,paste(value,"*",sep=""))
+    } else {
+      answer = append(answer,value)
+    }
+  }
+  return(answer)
+}
+#Créer une matrice de prédiction : on commence par des 1 sur chaque coefficient
+pred_mtx = matrix(rep(1),
+                  nrow = ncol(df_mcar),
+                  ncol = ncol(df_mcar))
+rownames(pred_mtx) = names(df_mcar)
+colnames(pred_mtx) = names(df_mcar)
+
+#Une vvariable ne peut pas se prédire elle-même donc on met 0 aux coefficients diagonaux
+diag(pred_mtx) = 0
+
+#Les variables ID et R n'ont pas de sens donc on les annule dans la matrice
+pred_mtx[c("ID","R"),] = 0
+pred_mtx[,c("ID","R")] = 0
+
+meth = c("logreg",
+                            "polyreg",
+                            "norm",
+                            "",
+                            "",
+                            "norm",
+                            "norm",
+                            "norm",
+                            "",
+                            "")
+#Produire les imputations
+df_imput_mcar = mice(df_mcar,
+                     m = 10,
+                     predictorMatrix = pred_mtx,
+                     meth=meth,
+                     seed = 1000)
+
+cox1 = coxph(Surv(SUIVI,DCD)~FIB4 +
+               SEXE +
+               AGE +
+               TBC +
+               VHC_DUR +
+               CD4_VAL,
+             data = df_mcar)
+
+post = df_imput_mcar$post
+post["CD4_VAL"] = "imp[[j]][,i] <- squeeze(imp[[j]][,i],c(0,2000))"
+post["FIB4"] = "imp[[j]][,i] <- squeeze(imp[[j]][,i],c(0,100))"
+post["VHC_DUR"] = "imp[[j]][,i] <- squeeze(imp[[j]][,i],c(0,50))"
+df_imput_mcar = mice(data = df_mcar,
+                     m = 10,
+                     method = meth,
+                     predictorMatrix = pred_mtx,
+                     post = post,
+                     seed = 1000)
+
+cox_imputs = with(df_imput_mcar, coxph(Surv(SUIVI,DCD)~FIB4 +
+                              SEXE +
+                              AGE +
+                              TBC +
+                              VHC_DUR +
+                              CD4_VAL))
+
+cox2 = pool(cox_imputs)
+
+col_estim_nofit = c()
+col_sd_nofit = c()
+col_p_nofit= c()
+for(i in 1:7){
+  col_estim_nofit = append(col_estim_nofit,unname(cox1$coefficients[i]))
+  col_sd_nofit = append(col_sd_nofit,unname(summary(cox1)$coefficients[,2][i]))
+  col_p_nofit = append(col_p_nofit,unname(summary(cox1)$coefficients[,5][i]))
+}
+
+col_estim_fit = summary(cox2)[,2]
+col_sd_fit = summary(cox2)[,3]
+col_p_fit = summary(cox2)[,6]
+
+
+df_comp = data.frame(c("","FIB4","SEXE","AGE","Tabac","Durée VHC","Taux de CD4"),
+                     col_estim_nofit,
+                     col_sd_nofit,
+                     star(col_p_nofit),
+                     col_estim_fit,
+                     col_sd_fit,
+                     star(col_p_fit))
+
+colnames(df_comp) = c("Variable",
+                      "Coefficient (SI)",
+                      "SD (SI)",
+                      "P-val (SI)",
+                      "Coefficient (I)",
+                      "SD (I)",
+                      "P-val (I)")
+kable(df_comp,align = "cccccccc") %>%
+  kable_classic()
+
+plot(df_imput_mcar)
+densityplot(df_imput_mcar)
+stripplot(df_imput_mcar)
+
+
+
+```
+
+```{r}
+cox2$fmi
+```
+
