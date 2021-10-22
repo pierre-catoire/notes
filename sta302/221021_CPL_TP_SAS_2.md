@@ -196,3 +196,16 @@ L'output donne les résidus et les résidus conditionnels.
 
 ### Standardisation des résidus.
 Les résidus conditionnels ont une variance propre. Il doivent être standardisés pour être comparés. Il existe plusieurs méthodes pour cela : Pearson, Student. Il existe également les résidus de Cholesky.
+
+### Processus auto-régressifs
+
+```
+proc mixed data = tp.df method = ML covtest;
+class id drug;
+model albumin = year histo3 histo4 year*histo3 year*histo4/ solution residual vciry outp=cond outpm=marg;
+random intercept year / subject = id type = VC solution;
+repeated / subject=id type=sp(pow) (year) local;
+run;
+```
+
+On retrouve dans l'output le `SP(POW)` qui correspond à l'autocorrelation. La p-valeur du `SP(POW)` est très significative et l'AIC est meilleur, montrant que le modèle avec autocorrélation est pertinent.
