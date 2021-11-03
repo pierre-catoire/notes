@@ -1,0 +1,185 @@
+---
+title: "main"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+packages = c("nlme",
+             "lattice",
+             "dplyr",
+             "ggplot2",
+             "nlme",
+             "kableExtra",
+             "papeR")
+
+lapply(packages, install.packages, character.only = TRUE)
+lapply(packages, library, character.only = TRUE)
+```
+
+## Etude de cohorte - PAQUID
+
+Etapes :
+
+- description rapide du jeu de données
+- trajectoires individuelles de l'IST : via ggplot ou plus simplement xyplot(X~t, groupe = varID, data= )
+- choix de la forme de la trajectoire
+- ecriture du modèle lin ́eaire mixte selon le temps depuis l’entr ́ee dans l’ ́etude,le sexe, l’age et le nivau
+
+```{r}
+df = read.delim("paquid_long_500sujets.txt", na.strings = ".")
+names(df) = toupper(names(df))
+names(df)[10] = "AGEINIT"
+labels(df) = c("Identifiant",
+               "MMSE",
+               "Score BVRT (test de mémoire visuelle)",
+               "Score IST (fluence verbale)",
+               "Score HIER (dépendance ffonctionnelle)",
+               "Score CESD (dépression)",
+               "Age au moment de la mesure",
+               "Age de l'apparition de la démence (ou de censure)",
+               "Indicateur de démence (1) ou de censure (0)",
+               "Age à l'entrée dans l'étude",
+               "Obtention du CEP",
+               "Sexe masculin")
+df$DEM=as.factor(df$DEM)
+df$CEP=as.factor(df$CEP)
+df$HOMME=as.factor(df$HOMME)
+
+kable(summarize(convert.labels(df), type = "numeric",labels = TRUE))
+```
+
+
+
+```{r}
+df_unique = unique(df[,c("ID","CEP","HOMME","AGEINIT","DEM","IST")])
+summary(df_unique)
+dim(df_unique)
+```
+
+```{r}
+xyplot(IST~AGE-AGEINIT,
+       group=ID,data=df,
+       type=c("l"),
+       main = "Evolution du score de fluence verbale en fonction du temps depuis l'inclusion",
+       xlab = "Temps depuis l'inclusion (années)",
+       ylab = "Fluence verbale (points)"
+       )
+```
+
+```{r}
+hist(table(df$ID[!is.na(df$IST)]))
+
+```
+
+## Ecriture du modèle linéaire mixte selon le temps depuis l'entrée dans l'étude, le sexe, l'âge et le niveau d'étude
+
+$$
+\begin{align}
+IST_{ij} = (\beta_{0}+\alpha_{0i}+(\beta_{1}+\alpha_{1i})t_{ij}+ \epsilon_{ij}
+\end{align}
+$$
+$$
+\begin{align}
+IST_{ij} = (\beta_{0}+\alpha_{0i}+(\beta_{1}+\alpha_{1i})t_{ij}+(\beta_{2}+\alpha_{2i})t_{ij}^2 + \epsilon_{ij}
+\end{align}
+$$
+
+$$
+\begin{align}
+IST_{ij} = (\beta_{0}+\alpha_{0i}+\beta_{SEXEi}X_{SEXEi}+\beta_{AGE}X_{AGEi}+\beta_{CEP}X_{CEPi})\\
++(\beta_{1}+\alpha_{1i}+\beta_{SEXE}X_{SEXEi}+\beta_{AGE}X_{AGEi}+\beta_{CEP}X_{CEPi})t_{ij}\\
++ \epsilon_{ij}
+\end{align}
+$$
+$$
+\begin{align}
+IST_{ij} = (\beta_{0}+\alpha_{0i}+\beta_{SEXE_{0}}X_{SEXEi}+\beta_{AGE_{0}}X_{AGEi}+\beta_{CEP_{0}}X_{CEPi})\\
++(\beta_{1}+\alpha_{1i}+\beta_{SEXE_{1}}X_{SEXEi}+\beta_{AGE_{1}}X_{AGEi}+\beta_{CEP_{1}}X_{CEPi})t_{ij}\\
++(\beta_{2}+\alpha_{2i}+\beta_{SEXE_{2}}X_{SEXEi}+\beta_{2AGE_{2}}X_{AGEi}+\beta_{CEP_{2}}X_{CEPi})t_{ij}^{2}\\
++ \epsilon_{ij}
+\end{align}
+$$
+
+
+```{r}
+df$DELAI = df$AGE-df$AGEINIT
+df$DELAI2 = df$DELAI^2
+
+model0 = lme(IST
+           ~ DELAI,
+           random = ~DELAI |ID,
+           data = df,
+           method = "ML",
+           na.action = na.omit)
+summary(model0)
+
+model0Sq = lme(IST
+           ~ DELAI
+           + I(DELAI^2),
+           random = ~DELAI+I(DELAI^2) |ID,
+           data = df,
+           method = "ML",
+           na.action = na.omit)
+summary(model0Sq)
+```
+
+Pour le modèle 0, R rend la corrélation.
+
+Pour retrouver la covariance, on a $\sigma_{01} = \rho_{01} \times \sigma_{0} \times \sigma_{1}$.
+
+Comment tester si la covariance des effets aléatoires est différente de 0 ?
+
+- On fait un modèle qui force une covariance nulle 
+
+```{r}
+model0Indep = lme(IST
+                 ~ DELAI,
+                 random = list(~ 1|ID,
+                               ~ -1+DELAI|ID),
+                 data = df,
+                 method = "ML",
+                 na.action = na.omit)
+summary(model0Indep)
+```
+
+- puis on teste par un rapport de vraisemblance le modèle complet contre le modèle restreint :
+
+```{r}
+anova(model0,model0Indep)
+```
+
+### Modèles ajustés
+
+```{r}
+model = lme(IST
+           ~ DELAI
+           + (HOMME + AGEINIT + CEP)
+           + (HOMME + AGEINIT + CEP)*DELAI,
+           random = ~DELAI |ID,
+           data = df,
+           method = "ML",
+           na.action = na.omit)
+kable(summary(model))
+
+#On teste 
+anova(model0,model)
+
+modelSq = lme(IST
+           ~ DELAI
+           + (HOMME + AGEINIT + CEP)
+           + (HOMME + AGEINIT + CEP)*DELAI
+           + (HOMME + AGEINIT + CEP)*I(DELAI^2),
+           random = ~DELAI + I(DELAI^2) |ID,
+           data = df,
+           method = "ML",
+           na.action = na.omit)
+summary(modelSq)
+
+anova(model,modelSq)
+```
+
+
+
+
+
