@@ -1,0 +1,324 @@
+---
+title: "STA305_1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(rjags)
+```
+
+# STA305 - TP1
+
+## Exercice 1 - Monte Carlo
+
+Nous illustrons tout d’abord la méthode de Monte-Carlo sur un exemple très simple.
+
+1. Implémenter une fonction qui génère un échantillon de taille 10, iid selon une loi normale de moyenne 2 et d’écart-type 3 et renvoie l’estimation de l’écart-type de cet échantillon.
+Utiliser la méthode de Monte-Carlo pour estimer l’écart-type de la loi à l’origine de cet échantillon, à partir de multiples réalisations (par exemple 5) de l’estimateur de l’écart-type implémenté ci-dessus. Recommencer avec réalisations ? Quel fameux résultat théorique illustre-t-on ici ?
+```{r}
+sdnorm=function(n){
+  s = rnorm(n,2,3)
+  return(sd(s))
+}
+
+mc=function(nsample){
+  arr = c()
+  i=1
+  while(i <= nsample){
+    sd = sdnorm(5)
+    arr = append(arr,sd)
+    i=i+1
+  }
+  return(mean(arr))
+  
+}
+
+mc(10000)
+
+```
+
+On illustre le fait que la moyenne des écart-types des échantillons soit un estimateur biaisé de l'écart-type.
+
+### 2. Programmer une estimation de MC du nombre $\pi$
+
+```{r}
+ncases = 35
+roulette_coord=function(ncases = 35){
+  x = ceiling(runif(1,0,ncases))
+  y = ceiling(runif(1,0,ncases))
+  return(c(x,y))
+}
+
+point=roulette_coord(ncases)
+
+inside_disk = function(point,ncases){
+  origin = c(ncases/2,ncases/2)
+  dist=sqrt(sum((point-origin)^2))
+  ifelse(dist>ncases/2,F,T)
+}
+
+inside_disk(point,ncases)
+
+mc_pi = function(nsample,ncases=35){
+  i=1
+  rep = c()
+  while(i <= nsample){
+    point=roulette_coord(ncases)
+    val = inside_disk(point,ncases)
+    rep = append(rep,val)
+    i=i+1
+  }
+  return(rep)
+}
+
+mc_pi(100)
+```
+
+```{r}
+piMC = function(in_circle){
+  rep = c()
+  for(i in in_circle){
+    rep = append(rep,ifelse(i,1,0))
+  }
+  return(mean(rep)*4)
+}
+```
+
+### Représentation graphique
+
+```{r}
+ncases=35
+pp = matrix(NA,ncol=2,nrow=ncases)
+
+for(i in 1:nrow(pp)){
+  pp[i,] = roulette_coord(ncases)
+}
+
+in_disk <- apply(X = pp, MARGIN = 1, FUN = inside_disk, ncases = ncases)
+piMC(in_disk)
+
+par(pty="s")
+plot(x = pp[, 1],
+     y = pp[, 2],
+     xlim = c(0, ncases),
+     ylim = c(0, ncases),
+     axes = 0,
+     xlab = "x",
+     ylab = "y",
+     type = "n")
+
+axis(1, at = c(0:ncases))
+axis(2, at = c(0:ncases))
+
+for (i in 0:ncases) {
+    abline(h = i, lty = 3)
+    abline(v = i, lty = 3)
+}
+
+lines(x = pp[, 1],
+      y = pp[, 2],
+      xlim = c(0, ncases),
+      ylim = c(0, ncases),
+      xlab = "x",
+      ylab = "y",
+      type = "p",
+      pch = 16)
+
+x.cercle <- seq(0, ncases, by = 0.1)
+y.cercle <- sqrt((ncases/2)^2 - (x.cercle - ncases/2)^2)
+lines(x.cercle, y = y.cercle + ncases/2, col = "red")
+lines(x.cercle, y = -y.cercle + ncases/2, col = "red")
+
+lines(x = pp[in_disk, 1],
+      y = pp[in_disk, 2],
+      xlim = c(0, ncases),
+      ylim = c(0, ncases),
+      xlab = "x",
+      ylab = "y",
+      type = "p",
+      pch = 16,
+      col = "red",
+      cex = 0.7)
+```
+
+
+
+## Exercice 2 : Fonction inverse
+
+On a :
+
+$$
+f(x)=\lambda e^{-\lambda x}
+$$
+
+et
+$$
+F(x) = 1-e^{-\lambda x}
+$$
+
+D'où 
+$$
+F^{-1}(x) = -\frac{1}{\lambda}\ln(1-x)
+$$
+```{r}
+samp_exp = function(n,lambda=1){
+  resp=c()
+  for(i in 1:n){
+    resp=append(resp,-(lambda^(-1))*log(1-runif(1,0,1)))
+  }
+  return(resp)
+}
+
+nsample=1000
+sample_exp = sort(samp_exp(nsample,1))
+quantiles = seq(0,0.99,0.01)
+
+x=c()
+y=c()
+for(i in quantiles){
+  x = append(x,i)
+  y = append(y,1-(length(which(sample_exp > qexp(i)))/nsample))
+}
+
+par(pty="s")
+plot(x,y,
+     main = "QQ plot de l'échantillon selon la distribution exponentielle théorique",
+     xlab="Quantiles théoriques",
+     ylab="Quantiles observés",
+     pch=1,
+     col=2,
+     xlim=c(0,1),
+     ylim=c(0,1))
+abline(0,1)
+```
+
+### Exercice 3
+
+Programmer une fonction calculant le numérateur du posterior selon la loi :
+
+$$
+p(\theta|n,S) \propto \theta^{S}(1-\theta)^{n-S}
+$$
+
+Avec $S = 241 945$ et $n=493 472$.
+
+```{r}
+n=49
+s=24
+theta = 0.499999999
+
+post_num_hist = function(theta,n=493472,s=241945,log=F){
+  lognum = s*log(theta)+(n-s)*log(1-theta)
+  
+  if(log){
+    resp = lognum
+  } else {
+    resp=exp(lognum)
+  }
+  return(resp)
+}
+
+post_num_hist(theta,n,s)
+```
+
+### 2. 
+
+**Programmer l’algorithme de Metropolis-Hastings correspondant qui renvoie un vecteur de taille échantillonné selon la loi a posteriori (on utilisera l’a priori — la loi Uniforme — comme loi instrumentale). La fonction doit également renvoyer le vecteur des probabilités d’acceptation. Que se passe-t-il si l’on ne calcule pas cette probabilité d’acceptation dans l’échelle logarithmique ?**
+
+On considère le modèle bayésien suivant :
+
+- Quantité d'intérêt : $\theta$
+- prior : $\mathcal{U}_{[0;1]}$
+- vraisemblance de l'échantillon $f_{\theta}(Y) = \prod\Big[\theta^{i}(1-\theta)^{1-i}\Big]$
+
+On a la loi a posteriori :
+$$
+p(\theta|n,S) \propto \theta^{S}(1-\theta)^{n-S}
+$$
+
+```{r}
+niter = 1000
+n = 49
+s = 24
+x_save = numeric(length = niter)
+alpha = numeric(length = niter)
+
+monMH = function(niter,post_num,x0){
+  x = x0
+
+  for(t in 1:niter){
+    y=runif(1,0,1)
+    ratio = post_num(y,n,s)/post_num(x,n,s)
+    alpha[t] = min(1,ratio)
+    x_save[t] = ifelse(alpha[t]>runif(1,0,1),y,x)
+    x = x_save[t]
+  }
+  return(list(theta=x_save,alpha=alpha))
+}
+
+mc_sample = monMH(niter = niter,
+      post_num = post_num_hist,
+      x0=0.5)
+
+
+#mc_sample$theta = mc_sample$theta[501:length(mc_sample)]
+#mc_sample$alpha = mc_sample$alpha[501:length(mc_sample)]
+
+p = s/n
+q = 1-p
+x_th = seq(0,1,0.01)
+y_th = dnorm(x_th,p,sqrt(p*q/n))
+
+hist(mc_sample$theta,breaks=10,density=50,col="darkgray",main="Estimateur MH de theta")
+lines(x_th,y_th*20,lwd=2)
+
+#Convergence
+par(mfrow=c(2,1))
+plot(mc_sample$theta,type="l",lwd=1)
+plot(mc_sample$alpha, type="l",lwd=1)
+```
+
+
+### 4
+
+On considère un prior 
+$$
+\pi(\theta) = \mathbb{B}(\alpha=3,\beta=3)
+$$.
+
+On a donc un posterior :
+$$
+f(\theta|Y) \propto \theta^{\alpha+s-1}(1-\theta)^{\beta+n-s-1}
+$$
+
+```{r}
+n=100
+s=49
+post_num_beta = function(theta,n=100,s=49,log=T,a=3,b=3){
+  num = ((theta)^(a+s-1))*((1-theta)^(b+n-s-1))
+  if(log){
+    num=log(num)
+  }
+  return(num)
+}
+
+sampleMH_beta = monMH(10000,post_num_beta,0.5)
+sampleMH_beta
+
+p = s/n
+q = 1-p
+x_th = seq(0,1,0.01)
+y_th = dnorm(x_th,p,sqrt(p*q/n))
+
+hist(sampleMH_beta$theta,breaks=10,density=50,col="darkgray",main="Estimateur MH de theta")
+lines(x_th,y_th*20,lwd=2)
+
+#Convergence
+par(mfrow=c(2,1))
+plot(sampleMH_beta$theta,type="l",lwd=1)
+plot(sampleMH_beta$alpha, type="l",lwd=1)
+```
+
