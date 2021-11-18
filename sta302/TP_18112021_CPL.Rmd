@@ -1,0 +1,218 @@
+---
+title: "main"
+output: html_document
+---
+
+## STA 302 - TD du 18.11.2021 - CPL
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(papeR)
+library(lattice)
+library(nlme)
+library(survival)
+library(JM)
+```
+
+#### Mise en forme du jeu de données longitudinales
+
+```{r}
+df = data_long
+
+names(df) = df %>% names() %>% toupper()
+
+labels(df) = c("Identifiant du sujet",
+               "Temps de suivi",
+               "Score de gravité histologique de Gleason",
+               "Stade de la taille de la tumeur",
+               "logarithme du taux de PSA",
+               "logarithme du taux initial de PSA")
+
+sapply(df, class)
+```
+
+#### Mise en forme du jeu de données de survie
+
+```{r}
+dfs = data_surv
+
+names(dfs) = dfs %>% names() %>% toupper()
+
+labels(dfs) = c("Identifiant du sujet",
+                "Stade de la taille de la tumeur",
+                "Score de gravité histologique de Gleason",
+                "Rechute clinique",
+                "Temps de rechute clinique (ou de censure)",
+                "Décès",
+                "Temps de décès",
+                "Evenement",
+                "Temps d'événement",
+                "Logarithme du taux initial de PSA")
+
+sapply(dfs, class)
+
+dfs$CLIN_REC = dfs$CLIN_REC %>% as.factor()
+dfs$DEATH = dfs$DEATH %>% as.factor()
+dfs$EVENT = dfs$EVENT %>% as.factor()
+```
+
+#### Vérification de l'absence de données manquantes
+
+```{r}
+sum(is.na(df))
+sum(is.na(dfs))
+```
+
+#### Description des données
+
+```{r}
+sapply(c("factor","numeric"),
+       papeR::summarise,
+       data = df)
+
+sapply(c("factor","numeric"),
+       papeR::summarise,
+       data = dfs)
+```
+
+
+### 
+
+
+```{r}
+color <- df$TSTAGE
+xyplot(LOGPSA ~ TIMES,
+       group=ID,
+       data=df,
+       col=color,
+       lwd=1,
+       type = 'l',bty="n",
+       xlab = "Délai depuis l'entrée",
+       ylab = "Taux de PSA (log)")
+```
+
+
+#### Modélisation de l'évolution du taux de PSA depuis le délai d'entrée
+
+On considère le modèle suivant :
+
+$$
+\log{PSA} = \beta_{0} + \beta_{1}t + \beta_{2}e^{-\beta_{3}t}
+$$
+
+On crée une variable EXPt et on estime
+
+$$
+\log{PSA} = \beta_{0} + \beta_{1}t + log{\beta_{2}}+EXPt^{\beta_{3}}
+$$
+
+
+
+```{r}
+to_optim=function(beta){
+  df$EXPTIMES = exp(beta*df$TIMES)
+  model = lme(fixed = LOGPSA ~ TIMES + EXPTIMES,
+            data = df,
+            random = ~ TIMES + EXPTIMES | ID,
+            method="ML",
+            na.action=na.omit)
+  return(AIC(model))
+}
+
+to_optim(0.1)
+to_optim(0.25)
+to_optim(0.5)
+to_optim(1)
+to_optim(2)
+to_optim(2.5)
+
+optim(1,to_optim,lower = 0.1, upper = 2.5)
+```
+
+```{r}
+model = lme(LOGPSA ~ TIMES
+            + (IPSALOG + TSTAGE + GLEASON)*TIMES
+            + (IPSALOG + TSTAGE + GLEASON)*I(log(TIMES+1)),
+            random =~ TIMES + I(log(TIMES+1)) | ID,
+            data = df,
+            method="ML",
+            na.action = na.omit)
+```
+
+Interprétation :
+
+- TIMES : log du taux de PSA à T0 pour les individus de la classe de référence pour les variables explicatives
+- IPSALOG : effet de l'augmentation d'une unité de LOGPSA avant traitement sur le LOGPSA à T0
+
+
+### Modèle de survie
+
+Le modèle de survie peut s'écrire :
+
+$$
+\lambda_{t} = \lambda_{0} \times e^{\beta X}
+$$
+
+```{r}
+modelsurv = coxph(Surv(T_EVENT, EVENT==1) ~ IPSALOG + TSTAGE + GLEASON,
+                  data = dfs,
+                  x = T)
+```
+
+
+Le modèle conjoint peut s'écrire :
+
+$$
+\lambda_{t} = \lambda_{0} \times e^{\beta X + \alpha Y_{i}^{*}(t)}
+$$
+
+```{r}
+jmodel = jointModel(model,
+                    modelsurv,
+                    timeVar = "TIMES",
+                    verbose = T)
+summary(jmodel)
+```
+
+#### Modification du nombre de noeuds
+
+```{r}
+jmodel2 = jointModel(model,
+                    modelsurv,
+                    timeVar = "TIMES",
+                    control = list(lng.in.kn = 1))
+summary(jmodel2)
+
+jmodel3 = jointModel(model,
+                    modelsurv,
+                    timeVar = "TIMES",
+                    control = list(GHk = 5))
+summary(jmodel3)
+
+jmodel4 = jointModel(model,
+                    modelsurv,
+                    timeVar = "TIMES",
+                    interFact = list("both"))
+summary(jmodel4)
+
+jmodel5 = jointModel(model,
+                    modelsurv,
+                    timeVar = "TIMES",
+                    interFact = list("slope"))
+summary(jmodel5)
+
+jmodel6 = jointModel(model,
+                    modelsurv,
+                    timeVar = "TIMES",
+                    interFact = list("value"))
+summary(jmodel6)
+
+AIC(jmodel)
+AIC(jmodel2)
+AIC(jmodel3)
+AIC(jmodel4)
+AIC(jmodel5)
+AIC(jmodel6)
+
+```
