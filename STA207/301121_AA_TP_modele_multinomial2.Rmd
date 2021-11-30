@@ -1,0 +1,224 @@
+---
+title: "mainSTA207_2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(VGAM)
+library(epitools)
+library(epiDisplay)
+```
+
+## Modèle à cotes proportionnelles
+
+```{r}
+tab = array(c(99,93,231,493,84,473,
+              117,62,347,387,150,332,
+              234,112,889,793,257,571), dim=c(2, 3, 3))
+dimnames(tab) = list(c(0,1), c(3,2,1), c(1974,1984,1994))
+```
+
+
+```{r}
+names(dimnames(tab)) = c( "married", "happy", "year")
+tab
+```
+
+
+```{r}
+hapiness = expand.table(tab)
+head(hapiness) 
+write.table(hapiness, file = "hapiness.txt",quote = FALSE,sep="\t")
+```
+
+
+
+```{r}
+table(hapiness$happy)
+tabpct(hapiness$married,hapiness$happy)
+chisq.test(hapiness$married,hapiness$happy)$expected
+chisq.test(hapiness$married,hapiness$happy)
+```
+
+
+```{r}
+tabpct(hapiness$year,hapiness$happy)
+chisq.test(hapiness$year,hapiness$happy)$expected
+chisq.test(hapiness$year,hapiness$happy)
+```
+
+
+```{r}
+hapiness$happy <- ordered(hapiness$happy, levels = 1:3,labels = c("Tr?s", "Peu", "Pas"))
+mod1 <- vglm(happy ~ married+factor(year),family=cumulative(parallel=TRUE), data=hapiness)
+summary(mod1)
+```
+
+
+
+On a donc les variables :
+
+- happy : variable à expliquer
+  - 1 : très heureux
+  - 2 : assez heureux
+  - 3 : pas heureux
+  
+Deux variables explicatives :
+- year
+- married
+
+
+#### Modèle à cotes proportionnelles
+
+$$
+\log\Bigg(\frac{P(H=1)}{1-P(H=1)}\Bigg) = \alpha_1 + \beta_1 M + \beta_2 Y84 + \beta_3 Y94 \\
+\log\Bigg(\frac{P(H\leq1)}{1-P(H=3)}\Bigg) = \alpha_2 + \beta_1 M + \beta_2 Y84 + \beta_3 Y94
+$$
+
+```{r}
+hapiness$happy = ordered(hapiness$happy, levels = 1:3,labels = c("Tr?s", "Peu", "Pas"))
+mod1 = vglm(happy ~ married+factor(year),family=cumulative(parallel=TRUE), data=hapiness)
+summary(mod1)
+```
+
+La première équation modélisée est P(Y<=1), la deuxième est P(Y<=2).
+
+
+
+#### Modèle logit cumulé
+
+Le modèle s'écrit :
+
+$$
+\left\{
+    \begin{array}{ll}
+      \alpha_1+\beta_{11}M + \beta_{21}Y24 + \beta_{31}Y94 \\
+      \alpha_2+\beta_{12}M + \beta_{22}Y24 + \beta_{32}Y94
+    \end{array}
+\right.
+$$
+
+
+```{r}
+mod2 = vglm(happy ~ married+factor(year),family=cumulative, data=hapiness)
+summary(mod2)
+vcov(mod2)
+```
+
+
+On a 
+
+$$
+\beta = \begin{pmatrix}
+  \alpha_1 \\
+  \alpha_2 \\
+  \beta_{11} \\
+  \beta_{12} \\
+  \beta_{21} \\
+  \beta_{22} \\
+  \beta_{31} \\
+  \beta_{32}
+\end{pmatrix}
+$$
+
+Donc :
+
+$$
+L = \begin{pmatrix}
+  0 & 0 & 1 & -1 & 0 & 0 & 0 & 0 \\
+  0 & 0 & 0 & 0 & 1 & -1 & 0 & 0 \\
+  0 & 0 & 0 & 0 & 0 & 0 & 1 & -1
+\end{pmatrix}
+$$
+
+Test du rapport de vraisemblance :
+
+```{r}
+lrtest(mod2,mod1)
+```
+
+test de Wald
+
+```{r}
+beta=coef(mod2)
+vcov(mod2)
+
+L = matrix(c(0,0,1,-1,0,0,0,0,
+             0,0,0,0,1,-1,0,0,
+             0,0,0,0,0,0,1,-1),nrow = 3,byrow=T)
+
+wgen = aperm(L %*% beta)%*%solve(L%*%vcov(mod2)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen, df=3, lower.tail=FALSE)
+pval
+```
+
+On teste PC pour married - H0 : b11=b12
+
+```{r}
+L = matrix(c(0,0,1,-1,0,0,0,0),nrow=1,byrow=TRUE)
+wgen = aperm(L %*% beta)%*%solve(L%*%vcov(mod2)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen, df=1, lower.tail=FALSE)
+pval
+```
+
+On teste pour year : b21 = b22 et b31 = b32
+
+```{r}
+L = matrix(c(0,0,0,0,1,-1,0,0,
+             0,0,0,0,0,0,1,-1),nrow=2,byrow=TRUE)
+wgen = aperm(L %*% beta)%*%solve(L%*%vcov(mod2)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen, df=2, lower.tail=FALSE)
+pval
+```
+
+
+On voit que le test est significatif, on rejette l'hypothèse de proportionnalité des cotes pour YEAR.
+
+On peut donc ocnsidérer un modèle partiel à cotes proportionnelles.
+
+### Modèle partiel à cotes proportionnelles
+
+$$
+\left\{
+    \begin{array}{ll}
+      \alpha_1+\beta_{1}M + \beta_{21}Y24 + \beta_{31}Y94 \\
+      \alpha_2+\beta_{1}M + \beta_{22}Y24 + \beta_{32}Y94
+    \end{array}
+\right.
+$$
+
+C'est à dire qu'on suppose que le coefficient pour M est le même.
+
+```{r}
+mod3 = vglm(happy ~ married+factor(year),
+            family=cumulative(parallel=FALSE ~ factor(year)),
+            data=hapiness)
+
+summary(mod3)
+coef(mod3)
+exp(confint(mod3))
+
+wtest = summary(mod3)@coefficients/summary(mod3)@standard.errors
+pchisq(wtest^2, df=1, lower.tail=FALSE)
+```
+
+
+On teste la variable year : $\beta_{21} = \beta_{31} = \beta_{22} = \beta_{32} = 0$
+```{r}
+beta=coef(mod3)
+vcov(mod3)
+# mod3 - test PC pour year - H0 : b21=b22=b31=b32=0
+L <- matrix(c(0,0,0,1,0,0,0,
+              0,0,0,0,1,0,0,
+              0,0,0,0,0,1,0,
+              0,0,0,0,0,0,1),nrow=4,byrow=TRUE)
+wgen <- aperm(L %*% beta)%*%solve(L%*%vcov(mod3)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval <- pchisq(wgen, df=4, lower.tail=FALSE)
+pval
+```
+
+
