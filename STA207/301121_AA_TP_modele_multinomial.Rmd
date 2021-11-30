@@ -1,0 +1,252 @@
+---
+title: "STA207"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+df = read.delim("mammo.txt")
+```
+
+## 
+
+Pour $H_{0} = L_\beta = 0$ et :
+
+- ME = 0 : pas d'exp
+- 1 exp récente
+2 : exp ancienne
+
+on a 
+
+$$
+log(\frac{P(ME = 1)}{P(ME = 0)}) = \beta_{01} + \beta_{11}HIST \\
+
+log(\frac{P(ME = 2)}{P(ME = 0)}) = \beta_{02} + \beta_{12}HIST
+$$
+
+Le test de Wald s'écrit
+
+$$
+\chi^{2}_W = (L\hat{\beta})^T \times [L\mathbb{V}(\hat{\beta})L^T]^{-1}(L\hat{\beta})
+$$
+
+Les hypothèses s'écrivent :
+
+1. $H_0 : \beta_{11} = 0$ et $\beta_{12}=0$
+2. $\beta_{11} = 0$
+3. $\beta_{12} = 0$
+4. $H_0 : \beta_{11} = \beta_{12}$ ou $\beta_{11} - \beta_{12}=0$
+
+On a à définir L, $\hat{\beta}$ sont les coefficients du modèle, \mathbb{V}(\hat{\beta}) est la matrice de variance-covariance du modèle.
+
+
+```{r}
+library(epitools)
+library(epiDisplay)
+library(nnet)
+library(survival)
+library(mfp)
+library(VGAM)
+```
+
+```{r}
+mammo = read.delim("mammo.txt")
+mammo01 = subset(mammo, ME ==0 | ME == 1)
+mammo02 = subset(mammo, ME ==0 | ME == 2)
+mammo02$ME = ifelse(mammo02$ME ==2,1,0)
+```
+
+```{r}
+m1 = multinom(ME~HIST,data=mammo)
+summary(m1)
+exp(coef(m1))
+exp(confint(m1))
+wtest = summary(m1)$coefficients/summary(m1)$standard.errors
+pchisq(wtest^2,df=1,lower.tail=FALSE)
+vcov(m1)
+```
+
+
+On voit dans la sortie que les coefficients sont dans vcov :
+- $\beta_{01}$
+- $\beta_{11}$
+- $\beta_{02}$
+- $\beta_{12}$
+
+On a donc :
+
+|            | expérience récente/pas d'expérience |           | expérience ancienne / pas d'expérience |           |
+|------------|-------------------------------------|-----------|----------------------------------------|-----------|
+|            | RC                                  | IC95%     | RC                                     | IC95%     |
+| HIST (1/0) | 3.51                                | 1.68-7.36 | 2.74                                   | 1.19-6.34 |
+Il est difficile de renuméroter vcov, donc on va renuméroter les beta.
+
+```{r}
+beta = matrix(c(coef(m1)[1],coef(m1)[3],coef(m1)[2],coef(m1)[4]),nrow=4,ncol=1)
+```
+
+On passe de $\beta = \begin{pmatrix}{\beta_{01} \\ \beta_{02} \\ \beta_{11}\\ \beta_{12}}\end{pmatrix}$ à $\beta = \begin{pmatrix}{\beta_{01} \\ \beta_{11} \\ \beta_{02}\\ \beta_{12}}\end{pmatrix}$.
+
+On définit la matrice L :
+
+```{r}
+L = matrix(c(0,1,0,0,
+             0,0,0,1),nrow=2,byrow=T)
+wgen = aperm(L %*% beta) %*% solve(L%*%vcov(m1)%*%aperm(L))%*%(L%*%beta) #wgen pour Wald généralisé
+#aperm transpose la matrice, solve inverse la matrice
+wgen
+pval = pchisq(wgen,df=2,lower.tail=F)
+pval
+```
+
+|            | expérience récente/pas d'expérience |           | expérience ancienne / pas d'expérience |           | p-val |
+|------------|-------------------------------------|-----------|----------------------------------------|-----------|-------|
+|            | RC                                  | IC95%     | RC                                     | IC95%     |       |
+| HIST (1/0) | 3.51                                | 1.68-7.36 | 2.74                                   | 1.19-6.34 | 0.002 |
+
+
+
+### Calcul statistique de wald généralisé H0 : B11 = B12
+
+```{r}
+L = matrix(c(0,1,0,-1),nrow=1,byrow=T)
+wgen = aperm(L %*% beta) %*% solve(L%*%vcov(m1)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen,df=1,lower.tail=F)
+pval
+```
+
+L'effet de HIST n'est pas différent selon qu'on considère une expérience récente ou ancienne.
+
+On ne teste pas les hypothèses $\beta_{11} = 0$ et $\beta_{12} = 0$ car l'information est contenue dans l'intervalle de confiance.
+
+
+### Modèle avec variable explicative multinomiale
+
+$$
+log\Bigg(\frac{P(ME = 1)}{P(ME = 0)}\Bigg) = \beta_{01} + \beta_{11}DECT_{(2/1)} + \beta_{21}DECT_{(3/1)} \\
+
+log\Bigg(\frac{P(ME = 2)}{P(ME = 0)}\Bigg) = \beta_{02} + \beta_{12}DECT_{(2/1)} + \beta_{22}DECT_{(3/1)}
+$$
+
+Les hypothèses à tester sont :
+
+1. H0 : $\beta_{11} = \beta_{21} = \beta_{12} = \beta_{22} = 0$
+2. HO : $\beta_{11} = \beta_{21} = 0$
+3. H0 : $\beta_{12} = \beta_{22 = 0$
+4. H0 : $\beta_{11} = \beta_{12}$ et $\beta_{21} = \beta_{22}$
+
+```{r}
+m4 = multinom(ME~factor(DECT),data = mammo)
+summary(m4)
+exp(coef(m4))
+exp(confint(m4))
+```
+
+
+
+|            | expérience récente/pas d'expérience |            | expérience ancienne / pas d'expérience |           | p-val   |
+|------------|-------------------------------------|------------|----------------------------------------|-----------|---------|
+|            | RC                                  | IC95%      | RC                                     | IC95%     |         |
+| HIST (1/0) | 3.51                                | 1.68-7.36  | 2.74                                   | 1.19-6.34 | 0.002   |
+| DECT (2/1) | 2.03                                | 0.24-16.94 | 0.68                                   | 0.19-2.34 |         |
+| DECT(3/1)  | 8.22                                | 1.06-63.9  | 1.22                                   | 0.38-3.90 |         |
+
+On renumérote beta :
+
+```{r}
+beta = matrix(c(coef(m4)[1],coef(m4)[3],coef(m4)[5],coef(m4)[2],
+                coef(m4)[4],coef(m4)[6]),nrow=6,ncol=1)
+
+#On teste globalement l'effet de DECT dans le modèle multinomial :
+#H0 : b11 = b21=b12=b22=0
+L = matrix(c(0,1,0,0,0,0,
+             0,0,1,0,0,0,
+             0,0,0,0,1,0,
+             0,0,0,0,0,1),nrow=4,byrow=T)
+
+wgen = aperm(L %*% beta) %*% solve(L%*%vcov(m4)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen,df=4,lower.tail=F)
+pval
+```
+
+
+
+|            | expérience récente/pas d'expérience |            | expérience ancienne / pas d'expérience |           | p-val   |
+|------------|-------------------------------------|------------|----------------------------------------|-----------|---------|
+|            | RC                                  | IC95%      | RC                                     | IC95%     |         |
+| HIST (1/0) | 3.51                                | 1.68-7.36  | 2.74                                   | 1.19-6.34 | 0.002   |
+| DECT (2/1) | 2.03                                | 0.24-16.94 | 0.68                                   | 0.19-2.34 | < 0.001 |
+| DECT(3/1)  | 8.22                                | 1.06-63.9  | 1.22                                   | 0.38-3.90 |         |
+
+
+```{r}
+#On teste H° : b11 = b12 = 0
+L = matrix(c(0,1,0,0,0,0,
+             0,0,1,0,0,0),nrow=2,byrow=T)
+wgen = aperm(L %*% beta) %*% solve(L%*%vcov(m4)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen,df=2,lower.tail=F)
+pval
+```
+
+```{r}
+#On teste H° : b21 = b22 = 0
+L = matrix(c(0,0,0,0,1,0,
+             0,0,0,0,0,1),nrow=2,byrow=T)
+wgen = aperm(L %*% beta) %*% solve(L%*%vcov(m4)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen,df=2,lower.tail=F)
+pval
+```
+
+```{r}
+#On teste H0 : b11=b12 et b21=b22
+beta = matrix(c(coef(m4)[1],coef(m4)[3],coef(m4)[5],coef(m4)[2],
+                coef(m4)[4],coef(m4)[6]),nrow=6,ncol=1)
+
+L = matrix(c(0,1,0,0,-1,0,
+             0,0,1,0,0,-1),nrow=2,byrow=T)
+
+wgen = aperm(L %*% beta) %*% solve(L%*%vcov(m4)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen,df=2,lower.tail=F)
+pval
+```
+
+Donc l'effet de DECT est différent selon que l'expérience soit récente ou ancienne. Ceci justifie l'utilisation d'un modèle multinomial.
+
+#### Variable quantitative
+
+```{r}
+m5 = multinom(ME~PB,data=mammo)
+summary(m5)
+exp(coef(m5))
+exp(confint(m5))
+```
+
+|            | expérience récente/pas d'expérience |            | expérience ancienne / pas d'expérience |           | p-val   |
+|------------|-------------------------------------|------------|----------------------------------------|-----------|---------|
+|            | RC                                  | IC95%      | RC                                     | IC95%     |         |
+| HIST (1/0) | 3.51                                | 1.68-7.36  | 2.74                                   | 1.19-6.34 | 0.002   |
+| DECT (2/1) | 2.03                                | 0.24-16.94 | 0.68                                   | 0.19-2.34 | < 0.001 |
+| DECT(3/1)  | 8.22                                | 1.06-63.9  | 1.22                                   | 0.38-3.90 |         |
+| PB         | 0.70                                | 0.62-0.80  | 0.81                                   | 0.71-0.93 |         |
+
+
+NB : il faut d'abord tester la log-linaérité (utiliser mfp, cf. cours).
+
+```{r}
+beta = matrix(c(coef(m5)[1],coef(m5)[3],
+                coef(m5)[2],coef(m5)[4]),nrow=4,ncol=1)
+
+L = matrix(c(0,1,0,0,
+             0,0,0,1),nrow=2,byrow=T)
+
+wgen = aperm(L %*% beta) %*% solve(L%*%vcov(m4)%*%aperm(L))%*%(L%*%beta)
+wgen
+pval = pchisq(wgen,df=2,lower.tail=F)
+pval
+```
+
+
