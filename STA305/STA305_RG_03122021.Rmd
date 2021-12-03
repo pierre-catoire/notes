@@ -4,11 +4,16 @@ Le modèle bayésien est :
 
 - paramètre d'intérêt : risque relatif ($RR = \frac{P_{ecmo}}{P_{c}}$)
 - prior : $log(RR) \sim \mathcal{N}(\mu,\sigma^2)$ avec selon le modèle :
-  - minimally informative : $\mu = 1.0; \sigma^2 = 10^2 = 100$
-  - strongly enthusiastic : $\mu = 0.67; \sigma^2 = 0.25^2 = 0.0625$
+  - minimally informative : $\mu = e^{1.0} = e; \sigma^2 = 10^2 = 100$
+  - strongly enthusiastic : $\mu = 0.67 = 1.95; \sigma^2 = 0.25^2 = 0.0625$
   - moderately enthusiastic : $\mu = 0.78; \sigma^2 = 0.15^2 = 0.0225$
   - skeptical : $\mu = 1.0; \sigma^2 = 0.24^2 = 0.0576$
   - strongly skeptical : $\mu = 1.0; \sigma^2 = 0.15^2 = 0.0225$
+  
+
+et
+
+- $p_c \sim \mathcal{U}(0;1)$
 
 - loi d'échantillonnage : $f_{log(RR)}(Y) = (p_c e^{log(RR)})^s \times (1-p_c e^{log(RR)})^{(n-s)}$ équivalant à 
 
@@ -21,53 +26,44 @@ $$
 
 On écrit le modèle BUGS :
 
-```{jags}
+```
 model{
-
   # Vraisemblance pour ycontrol
-  for (i in 1:length(ycontrol)){ 
+  for (i in 1:Ncontrol){ 
     ycontrol[i]~dbern(pc)
   }
   
-  for (i in 1:length(yecmo)) {
-    yecmo[i]~dbern(pc*exp(logrr)) #Mais pc*exp(logrr)peut dépasser [0;1] ?!
+  for (i in 1:Necmo) {
+    yecmo[i]~dbern(pc*exp(logrr))
   }
   
   # A priori
-  logrr~dnorm(1,0.01) # peu informatif : moyenne 0, s2 = 100 donc tau = 0.01
+  logrr~dnorm(exp(1),0.01) # peu informatif : moyenne 0, s2 = 100 donc tau = 0.01
   pc~dunif(0,1)
-
-  # Variables d'interet
-  rr <- log(logrr)
 }
 ```
 
 On crée les vecteurs de données binaires :
 
 ```{r}
+ycontrol = c(rep(1,57),rep(0,125-57))
+yecmo = c(rep(1,44),rep(0,124-44))
+
 data_list = list(
   ycontrol = c(rep(1,57),rep(0,125-57)),
-  yecmo = c(rep(1,44),rep(0,124-44))
+  yecmo = c(rep(1,44),rep(0,124-44)),
+  Necmo = length(yecmo),
+  Ncontrol = length(ycontrol)
 )
 ```
 
 
 ```{r}
-
-inits = list(
-  list(logrr = 0, pc = 0.25),
-  list(logrr = -0.69, pc = 0.5),
-  list(logrr = 0.69, pc = 0.75)
-)
-
 model = jags.model("modeleolia.txt",
-                   data = data_list,
-                   inits = inits,
-                   n.chains = 3)
+                   data = data_list)
 
 
-
-mcmcSample = coda.samples(model = model,
-                          variable.names = c("logrr","pc"),
-                          n.iter = 2000)
+#mcmcSample = coda.samples(model = model,
+#                          variable.names = c("logrr","pc"),
+#                          n.iter = 2000)
 ```
