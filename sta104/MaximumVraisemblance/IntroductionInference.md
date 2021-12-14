@@ -4,7 +4,7 @@
 
 L' #inference statistique consiste à tirer des conclusions sur la loi ayant généré les données observées.
 
-Le point de départ de l' #inference est le choix d'un #modele, c'est-à-dire une famille de #distribution indexée par un #parametre $\theta$ (qui peut être unidimensionnel ou un vecteur).
+Le point de départ de l' #inference est le choix d'un #modele, c'est-à-dire une famille de #distribution indexée par un #parametre $\theta$ (qui peut être unidimensionnel ou un vecteur). fdgsrg
 
 ## #Modele statistique
 
